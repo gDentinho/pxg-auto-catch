@@ -1,4 +1,4 @@
-# PxG Auto Catch v0.10.1
+# PxG Auto Catch v0.10.2 — stability rollback
 
 A v0.10.0 mantém o Auto Catch validado da v0.9.0 e adiciona duas camadas para reduzir a dependência de patches manuais quando o PxG muda:
 
@@ -329,3 +329,50 @@ exclui Launcher/**/*.cs do projeto principal
 ```
 
 Com isso, `build_release.bat` pode ser executado repetidamente na mesma pasta.
+
+
+## v0.10.2 — rollback do caminho interno para a implementação validada
+
+Após os crashes observados com a nova camada de compatibilidade da v0.10.x,
+o caminho interno foi deliberadamente simplificado.
+
+A Bridge v8 é derivada diretamente da Bridge v5 que já havia sido validada
+em runtime com o Auto Catch funcionando junto do ambiente usado nos testes.
+
+Para o build atualmente conhecido:
+
+```text
+SHA-256
+9518E6BCD67074FEF4FE812F9BC0BA4A6365B6B8C6F6F40271EBDF62135F8236
+```
+
+a Bridge volta a usar exatamente os RVAs já validados:
+
+```text
+LuaInterface slot = 0x1104730
+lua_pcall         = 0xA2B380
+luaL_loadbufferx  = 0xA2CA10
+```
+
+A v0.10.2 NÃO envia mais RVAs Lua dinâmicos do Compatibility Resolver para a
+Bridge e NÃO adiciona um handshake Lua novo.
+
+O Compatibility Resolver continua no projeto para leitura/diagnóstico e para
+evolução futura, mas a mutação interna fica fail-closed em builds desconhecidos.
+
+Isto preserva:
+
+```text
+Updater pelo GitHub
+GitHub Releases
+interface v0.9+
+Auto Catch AoE
+whitelist Pokémon → Ball
+logs/modo desenvolvedor
+```
+
+e remove do caminho crítico a mudança que diferenciava a Bridge v6/v7 da
+Bridge estável anteriormente validada.
+
+A Bridge usa um novo nome/pipe (`PxGCorpseBridge_v8.dll`, `.v8`) para não
+reutilizar nenhuma DLL v5/v6/v7 residente no processo.

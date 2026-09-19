@@ -28,45 +28,29 @@ internal sealed class BridgeLoader
         if (!reader.IsAttached)
             throw new InvalidOperationException("Reader não está conectado.");
 
-        var profile = reader.CompatibilityProfile;
-
-        if (profile is null || !profile.Validated)
-        {
+        if (!reader.IsKnownBuild)
             throw new InvalidOperationException(
-                "Bridge bloqueada: Compatibility Resolver não validou este pxgme.exe.");
-        }
-
-        if (profile.LuaInterfaceSlotRva > int.MaxValue ||
-            profile.LuaPCallRva > int.MaxValue ||
-            profile.LuaLoadBufferXRva > int.MaxValue)
-        {
-            throw new InvalidOperationException(
-                "Bridge bloqueada: RVA de compatibilidade excede o protocolo v6.");
-        }
+                "Bridge bloqueada: o SHA do pxgme.exe não é o build validado.");
 
         string dllPath = Path.Combine(
             AppContext.BaseDirectory,
-            "PxGCorpseBridge_v7.dll");
+            "PxGCorpseBridge_v8.dll");
 
         if (!File.Exists(dllPath))
-        {
             throw new FileNotFoundException(
-                "PxGCorpseBridge_v6.dll não está ao lado do executável.",
+                "PxGCorpseBridge.dll não está ao lado do executável.",
                 dllPath);
-        }
 
-        bool alreadyLoaded = IsModuleLoaded(
-            reader.Process,
-            "PxGCorpseBridge_v7.dll");
+        bool alreadyLoaded = IsModuleLoaded(reader.Process, "PxGCorpseBridge_v8.dll");
 
         if (alreadyLoaded)
         {
-            log("BRIDGE_LOAD already_loaded=1 version=7");
+            log("BRIDGE_LOAD already_loaded=1");
         }
         else
         {
             InjectLoadLibrary(reader.Process, dllPath);
-            log($"BRIDGE_LOAD injected=1 version=7 dll={dllPath}");
+            log($"BRIDGE_LOAD injected=1 dll={dllPath}");
         }
 
         Exception? last = null;
@@ -77,50 +61,19 @@ internal sealed class BridgeLoader
 
             try
             {
-                var ping = await client.SendAsync(
+                var response = await client.SendAsync(
                     reader.Process.Id,
                     BridgeAction.Ping,
                     timeoutMs: 500,
                     cancellationToken: cancellationToken);
 
-                if (ping.Status != BridgeStatus.Executed)
+                if (response.Status == BridgeStatus.Executed)
                 {
-                    last = new InvalidOperationException(
-                        $"PING retornou {ping.Status}, detail={ping.Detail0}/{ping.Detail1}");
+                    return $"Ready v8 stable / PING detail={response.Detail0}";
                 }
-                else
-                {
-                    var configure = await client.SendAsync(
-                        reader.Process.Id,
-                        BridgeAction.ConfigureCompatibility,
-                        x: checked((int)profile.LuaInterfaceSlotRva),
-                        y: checked((int)profile.LuaPCallRva),
-                        z: checked((int)profile.LuaLoadBufferXRva),
-                        argument0: profile.Schema,
-                        timeoutMs: 2500,
-                        cancellationToken: cancellationToken);
 
-                    if (configure.Status != BridgeStatus.Executed ||
-                        configure.Detail0 != 6001)
-                    {
-                        throw new InvalidOperationException(
-                            "Bridge rejeitou o perfil de compatibilidade. " +
-                            $"status={configure.Status}; " +
-                            $"detail={configure.Detail0}/{configure.Detail1}; " +
-                            $"{BridgeProbeCatalog.ExplainDetail(configure.Detail0)}; " +
-                            $"lua={BridgeProbeCatalog.ExplainDetail(configure.Detail1)}");
-                    }
-
-                    log(
-                        $"BRIDGE_COMPAT_APPLIED source={profile.Source}; " +
-                        $"lua_slot=0x{profile.LuaInterfaceSlotRva:X}; " +
-                        $"pcall=0x{profile.LuaPCallRva:X}; " +
-                        $"loadbuffer=0x{profile.LuaLoadBufferXRva:X}; " +
-                        $"detail={configure.Detail0}");
-
-                    return
-                        $"Ready v7 / compat={profile.Source} / PING={ping.Detail0}";
-                }
+                last = new InvalidOperationException(
+                    $"PING retornou {response.Status}, detail={response.Detail0}/{response.Detail1}");
             }
             catch (Exception ex)
             {
@@ -133,12 +86,14 @@ internal sealed class BridgeLoader
         if (alreadyLoaded)
         {
             throw new InvalidOperationException(
-                "PxGCorpseBridge_v7.dll já está carregada, mas não respondeu " +
-                $"corretamente. Último erro: {last?.Message}");
+                "Já existe uma PxGCorpseBridge.dll carregada neste processo do PxG, " +
+                "mas ela não respondeu ao protocolo v5. Feche completamente o PxG, " +
+                "abra novamente e então carregue a bridge v0.5.2. " +
+                $"Último erro: {last?.Message}");
         }
 
         throw new InvalidOperationException(
-            $"Bridge v7 carregada, mas configuração/PING falhou. Último erro: {last?.Message}");
+            $"Bridge carregada, mas o PING v5 não respondeu. Último erro: {last?.Message}");
     }
 
     private static bool IsModuleLoaded(Process process, string moduleName)
@@ -247,10 +202,7 @@ internal sealed class BridgeLoader
             uint wait = WaitForSingleObject(thread, 5000);
 
             if (wait != WAIT_OBJECT_0)
-            {
-                throw new TimeoutException(
-                    $"LoadLibrary remoto não terminou. wait=0x{wait:X8}");
-            }
+                throw new TimeoutException($"LoadLibrary remoto não terminou. wait=0x{wait:X8}");
 
             if (!GetExitCodeThread(thread, out uint exitCode))
                 ThrowWin32("GetExitCodeThread");

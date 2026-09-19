@@ -5,9 +5,8 @@ namespace PxGCorpseReader;
 internal enum BridgeAction : ushort
 {
     Ping = 0,
-    ConfigureCompatibility = 1,
-    ProbeBallApi = 2,
-    UseBallOnCorpse = 3
+    ProbeBallApi = 1,
+    UseBallOnCorpse = 2
 }
 
 internal enum BridgeStatus : ushort
@@ -28,12 +27,12 @@ internal readonly record struct BridgeResponse(
 internal static class BridgeProtocol
 {
     internal const uint Magic = 0x31424350; // "PCB1"
-    internal const ushort Version = 7;
+    internal const ushort Version = 8;
     internal const int RequestSize = 32;
     internal const int ResponseSize = 32;
 
     internal static string PipeName(int pid)
-        => $"PxGCorpseBridge.{pid}.v7";
+        => $"PxGCorpseBridge.{pid}.v8";
 
     internal static byte[] SerializeRequest(
         BridgeAction action,
@@ -133,21 +132,16 @@ internal static class BridgeProbeCatalog
         {
             0 => "OK",
             2101 => "LuaInterface/lua_State inválido",
-            2102 => "funções Lua não foram resolvidas",
+            2102 => "AOB luaL_loadbufferx/lua_pcall não resolveu de forma única",
             2103 => "luaL_loadbufferx falhou",
             2104 => "lua_pcall falhou (predicate ausente/falso ou erro Lua)",
             2105 => "stack Lua ficou desbalanceado",
             2199 => "exceção nativa durante execução Lua",
             2200 => "probe code desconhecido",
-            2406 => "OK; funções Lua configuradas pelo Compatibility Resolver v6",
+            2401 => "OK; funções Lua resolvidas pelos RVAs fixos validados do build atual",
             5000 => "Ball interna executada",
             5101 => "parâmetros inválidos para UseBallOnCorpse",
             5102 => "executor Lua falhou em UseBallOnCorpse",
-            6000 => "perfil de compatibilidade aplicado com validação Lua (legado v6)",
-            6001 => "perfil de compatibilidade aplicado passivamente; nenhuma chamada Lua no handshake",
-            6101 => "RVAs do perfil fora das regiões esperadas do módulo",
-            6102 => "perfil chegou à bridge, mas a validação Lua falhou",
-            6103 => "UseBallOnCorpse bloqueado: perfil ainda não configurado",
             _ => $"detail={detail}"
         };
 }

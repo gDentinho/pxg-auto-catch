@@ -18,22 +18,24 @@
 namespace
 {
     constexpr std::uint32_t kMagic = 0x31424350; // PCB1
-    constexpr std::uint16_t kVersion = 7;
+    constexpr std::uint16_t kVersion = 8;
     constexpr UINT kBridgeMessage = WM_APP + 0x4B1;
-    // v7 receives the three Lua RVAs from the external Compatibility Resolver.
-    // Defaults preserve the currently validated build so diagnostics remain
-    // useful before ConfigureCompatibility is sent.
-    std::uintptr_t g_luaInterfaceSlotRva = 0x01104730;
-    std::uintptr_t g_luaPCallRva = 0x00A2B380;
-    std::uintptr_t g_luaLoadBufferXRva = 0x00A2CA10;
-    bool g_compatibilityConfigured = false;
+    constexpr std::uintptr_t kLuaInterfaceSlotRva = 0x01104730;
+
+    // Current pxgme.exe SHA-256:
+    // 9518E6BCD67074FEF4FE812F9BC0BA4A6365B6B8C6F6F40271EBDF62135F8236
+    //
+    // These RVAs were recovered directly from the on-disk PE image.
+    // They are used only as a fallback because another loaded component may
+    // have patched the in-memory prologue, making an AOB scan miss it.
+    constexpr std::uintptr_t kLuaPCallRva = 0x00A2B380;
+    constexpr std::uintptr_t kLuaLoadBufferXRva = 0x00A2CA10;
 
     enum class Action : std::uint16_t
     {
         Ping = 0,
-        ConfigureCompatibility = 1,
-        ProbeBallApi = 2,
-        UseBallOnCorpse = 3
+        ProbeBallApi = 1,
+        UseBallOnCorpse = 2
     };
 
     enum class Status : std::uint16_t
@@ -99,65 +101,11 @@ namespace
 
     LuaLoadBufferX g_loadBuffer = nullptr;
     LuaPCall g_pcall = nullptr;
-    int g_luaResolutionMode = 0; // 7=externally resolved/validated RVA profile
+    int g_luaResolutionMode = 0; // 4=validated fixed RVA pair for current build
 
     bool IsCanonical(std::uintptr_t p)
     {
         return p >= 0x10000ULL && p < 0x0000800000000000ULL;
-    }
-
-    std::size_t GetMainModuleSize()
-    {
-        auto* base = reinterpret_cast<std::uint8_t*>(GetModuleHandleW(nullptr));
-
-        if (!base)
-            return 0;
-
-        auto* dos = reinterpret_cast<IMAGE_DOS_HEADER*>(base);
-
-        if (dos->e_magic != IMAGE_DOS_SIGNATURE)
-            return 0;
-
-        auto* nt = reinterpret_cast<IMAGE_NT_HEADERS64*>(base + dos->e_lfanew);
-
-        if (nt->Signature != IMAGE_NT_SIGNATURE)
-            return 0;
-
-        return nt->OptionalHeader.SizeOfImage;
-    }
-
-    bool IsRvaInsideImage(std::uintptr_t rva)
-    {
-        const auto size = GetMainModuleSize();
-        return rva > 0 && size > 0 && rva < size;
-    }
-
-    bool IsExecutableRva(std::uintptr_t rva)
-    {
-        auto* base = reinterpret_cast<std::uint8_t*>(GetModuleHandleW(nullptr));
-
-        if (!base)
-            return false;
-
-        auto* dos = reinterpret_cast<IMAGE_DOS_HEADER*>(base);
-        auto* nt = reinterpret_cast<IMAGE_NT_HEADERS64*>(base + dos->e_lfanew);
-
-        auto* section = IMAGE_FIRST_SECTION(nt);
-
-        for (unsigned i = 0; i < nt->FileHeader.NumberOfSections; ++i)
-        {
-            const auto start = static_cast<std::uintptr_t>(section[i].VirtualAddress);
-            const auto span = static_cast<std::uintptr_t>(
-                (section[i].Misc.VirtualSize > section[i].SizeOfRawData)
-                    ? section[i].Misc.VirtualSize
-                    : section[i].SizeOfRawData);
-            const auto end = start + span;
-
-            if (rva >= start && rva < end)
-                return (section[i].Characteristics & IMAGE_SCN_MEM_EXECUTE) != 0;
-        }
-
-        return false;
     }
 
     struct Pattern
@@ -226,32 +174,41 @@ namespace
         if (g_loadBuffer && g_pcall)
             return true;
 
+        // Current validated pxgme.exe:
+        // SHA-256
+        // 9518E6BCD67074FEF4FE812F9BC0BA4A6365B6B8C6F6F40271EBDF62135F8236
+        //
+        // Important:
+        // 0x00A2C230 is lua_loadx, NOT luaL_loadbufferx.
+        // lua_loadx expects a lua_Reader callback as its second parameter.
+        // Passing a source buffer there causes an access violation.
+        //
+        // Correct pair for this build:
+        // lua_pcall        = moduleBase + 0x00A2B380
+        // luaL_loadbufferx = moduleBase + 0x00A2CA10
+        //
+        // The external Reader refuses to load this bridge unless the pxgme SHA
+        // is the validated build, so these RVAs are not used on unknown clients.
         auto base = reinterpret_cast<std::uintptr_t>(GetModuleHandleW(nullptr));
 
         if (!base)
             return false;
 
-        if (!IsExecutableRva(g_luaPCallRva) ||
-            !IsExecutableRva(g_luaLoadBufferXRva))
+        auto* fixedPCall =
+            reinterpret_cast<void*>(base + kLuaPCallRva);
+
+        auto* fixedLoadBufferX =
+            reinterpret_cast<void*>(base + kLuaLoadBufferXRva);
+
+        if (!IsCanonical(reinterpret_cast<std::uintptr_t>(fixedPCall)) ||
+            !IsCanonical(reinterpret_cast<std::uintptr_t>(fixedLoadBufferX)))
         {
             return false;
         }
 
-        auto* resolvedPCall =
-            reinterpret_cast<void*>(base + g_luaPCallRva);
-
-        auto* resolvedLoadBufferX =
-            reinterpret_cast<void*>(base + g_luaLoadBufferXRva);
-
-        if (!IsCanonical(reinterpret_cast<std::uintptr_t>(resolvedPCall)) ||
-            !IsCanonical(reinterpret_cast<std::uintptr_t>(resolvedLoadBufferX)))
-        {
-            return false;
-        }
-
-        g_pcall = reinterpret_cast<LuaPCall>(resolvedPCall);
-        g_loadBuffer = reinterpret_cast<LuaLoadBufferX>(resolvedLoadBufferX);
-        g_luaResolutionMode = 7;
+        g_pcall = reinterpret_cast<LuaPCall>(fixedPCall);
+        g_loadBuffer = reinterpret_cast<LuaLoadBufferX>(fixedLoadBufferX);
+        g_luaResolutionMode = 4;
         return true;
     }
 
@@ -263,7 +220,7 @@ namespace
             return nullptr;
 
         auto luaInterface =
-            *reinterpret_cast<std::uintptr_t*>(base + g_luaInterfaceSlotRva);
+            *reinterpret_cast<std::uintptr_t*>(base + kLuaInterfaceSlotRva);
 
         if (!IsCanonical(luaInterface))
             return nullptr;
@@ -318,7 +275,7 @@ namespace
                 L,
                 chunk.c_str(),
                 chunk.size(),
-                "@PxGCorpseBridge/v0.10.1",
+                "@PxGCorpseBridge/v0.10.2",
                 "t");
 
             if (loadStatus != 0)
@@ -551,52 +508,6 @@ namespace
         }
     }
 
-    Response ConfigureCompatibility(const Request& request)
-    {
-        Response response{};
-        response.magic = kMagic;
-        response.version = kVersion;
-        response.commandId = request.commandId;
-
-        const auto luaSlotRva =
-            static_cast<std::uintptr_t>(static_cast<std::uint32_t>(request.x));
-        const auto pcallRva =
-            static_cast<std::uintptr_t>(static_cast<std::uint32_t>(request.y));
-        const auto loadBufferRva =
-            static_cast<std::uintptr_t>(static_cast<std::uint32_t>(request.z));
-
-        if (!IsRvaInsideImage(luaSlotRva) ||
-            !IsExecutableRva(pcallRva) ||
-            !IsExecutableRva(loadBufferRva))
-        {
-            response.status = static_cast<std::uint16_t>(Status::IncompatibleClient);
-            response.detail0 = 6101;
-            return response;
-        }
-
-        // v0.10.0 executed a Lua chunk here as part of the handshake.
-        // That introduced a new Lua call immediately when connecting, before
-        // the user had requested any catch action. With another injected tool
-        // also observing/intercepting the client's Lua path, this can create
-        // an avoidable re-entrancy/timing hazard.
-        //
-        // v7 makes ConfigureCompatibility side-effect free: accept only RVAs
-        // already validated by the external Compatibility Resolver and defer
-        // the first Lua execution until an actual Probe/UseBall action.
-        g_luaInterfaceSlotRva = luaSlotRva;
-        g_luaPCallRva = pcallRva;
-        g_luaLoadBufferXRva = loadBufferRva;
-        g_loadBuffer = nullptr;
-        g_pcall = nullptr;
-        g_luaResolutionMode = 0;
-        g_compatibilityConfigured = true;
-
-        response.status = static_cast<std::uint16_t>(Status::Executed);
-        response.detail0 = 6001; // profile applied passively; no Lua executed
-        response.detail1 = 7;
-        return response;
-    }
-
     Response Execute(const Request& request)
     {
         Response response{};
@@ -616,11 +527,7 @@ namespace
             case Action::Ping:
                 response.status = static_cast<std::uint16_t>(Status::Executed);
                 response.detail0 = 1000;
-                response.detail1 = g_compatibilityConfigured ? 1 : 0;
                 return response;
-
-            case Action::ConfigureCompatibility:
-                return ConfigureCompatibility(request);
 
             case Action::ProbeBallApi:
             {
@@ -636,7 +543,7 @@ namespace
                 response.detail0 = request.argument0;
 
                 if (result.ok && request.argument0 == 0)
-                    response.detail1 = 2406;
+                    response.detail1 = 2401;
                 else
                     response.detail1 = result.detail;
 
@@ -645,13 +552,6 @@ namespace
 
             case Action::UseBallOnCorpse:
             {
-                if (!g_compatibilityConfigured)
-                {
-                    response.status = static_cast<std::uint16_t>(Status::IncompatibleClient);
-                    response.detail0 = 6103;
-                    return response;
-                }
-
                 const int ballItemId = request.argument0;
 
                 if (request.x <= 0 ||
@@ -895,7 +795,7 @@ namespace
         std::swprintf(
             pipeName,
             sizeof(pipeName) / sizeof(pipeName[0]),
-            L"\\\\.\\pipe\\PxGCorpseBridge.%lu.v7",
+            L"\\\\.\\pipe\\PxGCorpseBridge.%lu.v8",
             static_cast<unsigned long>(GetCurrentProcessId()));
 
         for (;;)

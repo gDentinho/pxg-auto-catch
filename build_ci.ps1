@@ -10,6 +10,16 @@ $NativeBin = Join-Path $Root "native_bin"
 $AppOut = Join-Path $Dist "app"
 $LauncherOut = Join-Path $Dist "launcher"
 
+# Avoid nested SDK-generated AssemblyInfo files being globbed by the root project.
+foreach ($dir in @(
+    (Join-Path $Root "obj"),
+    (Join-Path $Root "bin"),
+    (Join-Path $Root "Launcher\obj"),
+    (Join-Path $Root "Launcher\bin")
+)) {
+    if (Test-Path $dir) { Remove-Item $dir -Recurse -Force }
+}
+
 if (Test-Path $Dist) { Remove-Item $Dist -Recurse -Force }
 New-Item -ItemType Directory -Path $AppOut | Out-Null
 New-Item -ItemType Directory -Path $LauncherOut | Out-Null
@@ -26,8 +36,8 @@ if (-not (Test-Path $msbuild)) { throw "MSBuild não encontrado em $msbuild" }
 & $msbuild (Join-Path $Root "Bridge\PxGCorpseBridge.vcxproj") /p:Configuration=$Configuration /p:Platform=x64 /m
 if ($LASTEXITCODE -ne 0) { throw "Build da bridge falhou." }
 
-$bridge = Join-Path $NativeBin "PxGCorpseBridge_v6.dll"
-if (-not (Test-Path $bridge)) { throw "PxGCorpseBridge_v6.dll não foi gerada." }
+$bridge = Join-Path $NativeBin "PxGCorpseBridge_v7.dll"
+if (-not (Test-Path $bridge)) { throw "PxGCorpseBridge_v7.dll não foi gerada." }
 
 & dotnet publish (Join-Path $Root "PxGCorpseReader.csproj") `
     -c $Configuration `
@@ -49,7 +59,7 @@ if ($LASTEXITCODE -ne 0) { throw "Publish do app falhou." }
     -o $LauncherOut
 if ($LASTEXITCODE -ne 0) { throw "Publish do launcher falhou." }
 
-Copy-Item $bridge (Join-Path $AppOut "PxGCorpseBridge_v6.dll") -Force
+Copy-Item $bridge (Join-Path $AppOut "PxGCorpseBridge_v7.dll") -Force
 Copy-Item (Join-Path $LauncherOut "PxGAutoCatch.exe") (Join-Path $AppOut "PxGAutoCatch.exe") -Force
 Copy-Item (Join-Path $Root "update_config.json") (Join-Path $AppOut "update_config.json") -Force
 

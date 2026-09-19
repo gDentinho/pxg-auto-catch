@@ -46,7 +46,7 @@ internal sealed class BridgeLoader
 
         string dllPath = Path.Combine(
             AppContext.BaseDirectory,
-            "PxGCorpseBridge_v6.dll");
+            "PxGCorpseBridge_v7.dll");
 
         if (!File.Exists(dllPath))
         {
@@ -57,16 +57,16 @@ internal sealed class BridgeLoader
 
         bool alreadyLoaded = IsModuleLoaded(
             reader.Process,
-            "PxGCorpseBridge_v6.dll");
+            "PxGCorpseBridge_v7.dll");
 
         if (alreadyLoaded)
         {
-            log("BRIDGE_LOAD already_loaded=1 version=6");
+            log("BRIDGE_LOAD already_loaded=1 version=7");
         }
         else
         {
             InjectLoadLibrary(reader.Process, dllPath);
-            log($"BRIDGE_LOAD injected=1 version=6 dll={dllPath}");
+            log($"BRIDGE_LOAD injected=1 version=7 dll={dllPath}");
         }
 
         Exception? last = null;
@@ -101,7 +101,7 @@ internal sealed class BridgeLoader
                         cancellationToken: cancellationToken);
 
                     if (configure.Status != BridgeStatus.Executed ||
-                        configure.Detail0 != 6000)
+                        configure.Detail0 != 6001)
                     {
                         throw new InvalidOperationException(
                             "Bridge rejeitou o perfil de compatibilidade. " +
@@ -119,7 +119,7 @@ internal sealed class BridgeLoader
                         $"detail={configure.Detail0}");
 
                     return
-                        $"Ready v6 / compat={profile.Source} / PING={ping.Detail0}";
+                        $"Ready v7 / compat={profile.Source} / PING={ping.Detail0}";
                 }
             }
             catch (Exception ex)
@@ -133,12 +133,12 @@ internal sealed class BridgeLoader
         if (alreadyLoaded)
         {
             throw new InvalidOperationException(
-                "PxGCorpseBridge_v6.dll já está carregada, mas não respondeu " +
+                "PxGCorpseBridge_v7.dll já está carregada, mas não respondeu " +
                 $"corretamente. Último erro: {last?.Message}");
         }
 
         throw new InvalidOperationException(
-            $"Bridge v6 carregada, mas configuração/PING falhou. Último erro: {last?.Message}");
+            $"Bridge v7 carregada, mas configuração/PING falhou. Último erro: {last?.Message}");
     }
 
     private static bool IsModuleLoaded(Process process, string moduleName)

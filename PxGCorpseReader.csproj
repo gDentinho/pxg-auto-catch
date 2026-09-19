@@ -10,9 +10,9 @@
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <AssemblyName>PxGCorpseReader</AssemblyName>
     <RootNamespace>PxGCorpseReader</RootNamespace>
-    <Version>0.10.0</Version>
-    <FileVersion>0.10.0.0</FileVersion>
-    <AssemblyVersion>0.10.0.0</AssemblyVersion>
+    <Version>0.10.1</Version>
+    <FileVersion>0.10.1.0</FileVersion>
+    <AssemblyVersion>0.10.1.0</AssemblyVersion>
   </PropertyGroup>
 
   <!--
@@ -22,6 +22,15 @@
   -->
   <ItemGroup>
     <Compile Remove="InputSender.cs" />
+
+    <!--
+      The Launcher is a separate .NET project nested under this repository.
+      SDK-style projects glob **/*.cs recursively, so after the Launcher has
+      been built once its Launcher/obj/*.AssemblyInfo.cs files can otherwise
+      be picked up by the main project on the next build, producing CS0579
+      duplicate assembly attributes.
+    -->
+    <Compile Remove="Launcher/**/*.cs" />
   </ItemGroup>
 
 </Project>

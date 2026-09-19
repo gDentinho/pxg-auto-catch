@@ -18,9 +18,9 @@
 namespace
 {
     constexpr std::uint32_t kMagic = 0x31424350; // PCB1
-    constexpr std::uint16_t kVersion = 6;
+    constexpr std::uint16_t kVersion = 7;
     constexpr UINT kBridgeMessage = WM_APP + 0x4B1;
-    // v6 receives the three Lua RVAs from the external Compatibility Resolver.
+    // v7 receives the three Lua RVAs from the external Compatibility Resolver.
     // Defaults preserve the currently validated build so diagnostics remain
     // useful before ConfigureCompatibility is sent.
     std::uintptr_t g_luaInterfaceSlotRva = 0x01104730;
@@ -99,7 +99,7 @@ namespace
 
     LuaLoadBufferX g_loadBuffer = nullptr;
     LuaPCall g_pcall = nullptr;
-    int g_luaResolutionMode = 0; // 6=externally resolved/validated RVA profile
+    int g_luaResolutionMode = 0; // 7=externally resolved/validated RVA profile
 
     bool IsCanonical(std::uintptr_t p)
     {
@@ -251,7 +251,7 @@ namespace
 
         g_pcall = reinterpret_cast<LuaPCall>(resolvedPCall);
         g_loadBuffer = reinterpret_cast<LuaLoadBufferX>(resolvedLoadBufferX);
-        g_luaResolutionMode = 6;
+        g_luaResolutionMode = 7;
         return true;
     }
 
@@ -318,7 +318,7 @@ namespace
                 L,
                 chunk.c_str(),
                 chunk.size(),
-                "@PxGCorpseBridge/v0.10",
+                "@PxGCorpseBridge/v0.10.1",
                 "t");
 
             if (loadStatus != 0)
@@ -574,47 +574,26 @@ namespace
             return response;
         }
 
-        const auto oldLuaSlot = g_luaInterfaceSlotRva;
-        const auto oldPCall = g_luaPCallRva;
-        const auto oldLoadBuffer = g_luaLoadBufferXRva;
-        const auto oldLoadBufferFn = g_loadBuffer;
-        const auto oldPCallFn = g_pcall;
-        const auto oldMode = g_luaResolutionMode;
-        const auto oldConfigured = g_compatibilityConfigured;
-
+        // v0.10.0 executed a Lua chunk here as part of the handshake.
+        // That introduced a new Lua call immediately when connecting, before
+        // the user had requested any catch action. With another injected tool
+        // also observing/intercepting the client's Lua path, this can create
+        // an avoidable re-entrancy/timing hazard.
+        //
+        // v7 makes ConfigureCompatibility side-effect free: accept only RVAs
+        // already validated by the external Compatibility Resolver and defer
+        // the first Lua execution until an actual Probe/UseBall action.
         g_luaInterfaceSlotRva = luaSlotRva;
         g_luaPCallRva = pcallRva;
         g_luaLoadBufferXRva = loadBufferRva;
         g_loadBuffer = nullptr;
         g_pcall = nullptr;
         g_luaResolutionMode = 0;
-        g_compatibilityConfigured = false;
-
-        const auto result = RunChunkDetailed(
-            "local __pcb_compat_v6=1;"
-            "if not (g_game and g_map) then error('pcb_compat_globals_missing') end");
-
-        if (!result.ok)
-        {
-            g_luaInterfaceSlotRva = oldLuaSlot;
-            g_luaPCallRva = oldPCall;
-            g_luaLoadBufferXRva = oldLoadBuffer;
-            g_loadBuffer = oldLoadBufferFn;
-            g_pcall = oldPCallFn;
-            g_luaResolutionMode = oldMode;
-            g_compatibilityConfigured = oldConfigured;
-
-            response.status = static_cast<std::uint16_t>(Status::IncompatibleClient);
-            response.detail0 = 6102;
-            response.detail1 = result.detail;
-            return response;
-        }
-
         g_compatibilityConfigured = true;
 
         response.status = static_cast<std::uint16_t>(Status::Executed);
-        response.detail0 = 6000;
-        response.detail1 = 6;
+        response.detail0 = 6001; // profile applied passively; no Lua executed
+        response.detail1 = 7;
         return response;
     }
 
@@ -916,7 +895,7 @@ namespace
         std::swprintf(
             pipeName,
             sizeof(pipeName) / sizeof(pipeName[0]),
-            L"\\\\.\\pipe\\PxGCorpseBridge.%lu.v6",
+            L"\\\\.\\pipe\\PxGCorpseBridge.%lu.v7",
             static_cast<unsigned long>(GetCurrentProcessId()));
 
         for (;;)

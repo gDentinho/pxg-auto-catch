@@ -1,4 +1,4 @@
-# PxG Auto Catch v0.10.0
+# PxG Auto Catch v0.10.1
 
 A v0.10.0 mantém o Auto Catch validado da v0.9.0 e adiciona duas camadas para reduzir a dependência de patches manuais quando o PxG muda:
 
@@ -283,3 +283,49 @@ Modo desenvolvedor
 ## Observação para quem revisar o projeto
 
 O Compatibility Resolver é fail-closed: ele tenta recuperar endereços após relink/rebuild e valida estruturas antes de habilitar a automação. Não há rotina de esconder DLL, manual mapping, unhooking, alteração de anti-cheat ou mecanismo de evasão. A Bridge continua carregada de forma explícita e a ação de Catch não usa mouse/teclado.
+
+
+## v0.10.1 — hotfix de estabilidade da Bridge
+
+A v0.10.0 introduziu uma validação Lua durante o próprio handshake
+`ConfigureCompatibility`. Isso fazia uma chamada ao runtime Lua imediatamente
+ao clicar em conectar, mesmo antes de qualquer ação de captura.
+
+A v0.10.1 altera esse fluxo:
+
+```text
+Resolver externo valida perfil
+→ Bridge v7 recebe RVAs
+→ valida apenas faixas/RVAs
+→ NÃO executa Lua durante o handshake
+→ primeira execução Lua somente quando houver Probe/UseBall real
+```
+
+Isso mantém o Compatibility Resolver e o updater, mas remove uma nova chamada
+Lua desnecessária no momento da conexão.
+
+A Bridge foi renomeada para `PxGCorpseBridge_v7.dll` e usa pipe `.v7`, para que
+o hotfix nunca reutilize uma Bridge v6 antiga que já esteja residente no
+processo.
+
+
+### Correção de build repetido (CS0579)
+
+O Launcher é um projeto .NET separado dentro da pasta `Launcher/`. Depois de
+compilar uma vez, o SDK gera arquivos como:
+
+```text
+Launcher\obj\...\*.AssemblyInfo.cs
+```
+
+Como o projeto principal usa os globs padrão do SDK, esses arquivos podiam ser
+incluídos no build seguinte e gerar erros `CS0579: Duplicar atributo`.
+
+A v0.10.1 agora:
+
+```text
+exclui Launcher/**/*.cs do projeto principal
++ limpa obj/bin do Core e Launcher antes do build local/CI
+```
+
+Com isso, `build_release.bat` pode ser executado repetidamente na mesma pasta.

@@ -4,7 +4,7 @@ setlocal EnableExtensions EnableDelayedExpansion
 cd /d "%~dp0"
 
 echo ============================================================
-echo PxG Auto Catch v0.10.0 - COMPATIBILITY RESOLVER / BRIDGE V6
+echo PxG Auto Catch v0.10.1 - COMPATIBILITY RESOLVER / BRIDGE V7
 echo ============================================================
 echo.
 
@@ -60,10 +60,17 @@ if not defined STAMP set "STAMP=build"
 
 set "OUT=publish_!STAMP!"
 set "LAUNCHER_OUT=launcher_publish_!STAMP!"
-set "RELEASE_ZIP=PxGAutoCatch-v0.10.0-win-x64.zip"
+set "RELEASE_ZIP=PxGAutoCatch-v0.10.1-win-x64.zip"
 
 echo.
-echo [1/3] Compilando Internal Bridge v6 x64...
+echo Limpando caches de build anteriores...
+if exist "%~dp0obj" rmdir /S /Q "%~dp0obj"
+if exist "%~dp0bin" rmdir /S /Q "%~dp0bin"
+if exist "%~dp0Launcher\obj" rmdir /S /Q "%~dp0Launcher\obj"
+if exist "%~dp0Launcher\bin" rmdir /S /Q "%~dp0Launcher\bin"
+
+echo.
+echo [1/3] Compilando Internal Bridge v7 x64...
 echo MSBuild: !MSBUILD!
 echo.
 
@@ -76,9 +83,9 @@ if errorlevel 1 (
     exit /b 1
 )
 
-if not exist "%~dp0native_bin\PxGCorpseBridge_v6.dll" (
+if not exist "%~dp0native_bin\PxGCorpseBridge_v7.dll" (
     echo.
-    echo [ERRO] PxGCorpseBridge_v6.dll nao foi gerada.
+    echo [ERRO] PxGCorpseBridge_v7.dll nao foi gerada.
     pause
     exit /b 1
 )
@@ -123,7 +130,7 @@ if errorlevel 1 (
     exit /b 1
 )
 
-copy /Y "%~dp0native_bin\PxGCorpseBridge_v6.dll" "%~dp0!OUT!\PxGCorpseBridge_v6.dll" >nul
+copy /Y "%~dp0native_bin\PxGCorpseBridge_v7.dll" "%~dp0!OUT!\PxGCorpseBridge_v7.dll" >nul
 copy /Y "%~dp0!LAUNCHER_OUT!\PxGAutoCatch.exe" "%~dp0!OUT!\PxGAutoCatch.exe" >nul
 copy /Y "%~dp0update_config.json" "%~dp0!OUT!\update_config.json" >nul
 
@@ -139,8 +146,8 @@ if not exist "%~dp0!OUT!\PxGAutoCatch.exe" (
     exit /b 1
 )
 
-if not exist "%~dp0!OUT!\PxGCorpseBridge_v6.dll" (
-    echo [ERRO] PxGCorpseBridge_v6.dll nao foi copiada para o publish.
+if not exist "%~dp0!OUT!\PxGCorpseBridge_v7.dll" (
+    echo [ERRO] PxGCorpseBridge_v7.dll nao foi copiada para o publish.
     pause
     exit /b 1
 )
@@ -161,7 +168,7 @@ echo.
 echo Core:
 echo   %~dp0!OUT!\PxGCorpseReader.exe
 echo Bridge:
-echo   %~dp0!OUT!\PxGCorpseBridge_v6.dll
+echo   %~dp0!OUT!\PxGCorpseBridge_v7.dll
 echo.
 echo Pacote para GitHub Release:
 echo   %~dp0!RELEASE_ZIP!

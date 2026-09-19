@@ -28,12 +28,12 @@ internal readonly record struct BridgeResponse(
 internal static class BridgeProtocol
 {
     internal const uint Magic = 0x31424350; // "PCB1"
-    internal const ushort Version = 6;
+    internal const ushort Version = 7;
     internal const int RequestSize = 32;
     internal const int ResponseSize = 32;
 
     internal static string PipeName(int pid)
-        => $"PxGCorpseBridge.{pid}.v6";
+        => $"PxGCorpseBridge.{pid}.v7";
 
     internal static byte[] SerializeRequest(
         BridgeAction action,
@@ -143,7 +143,8 @@ internal static class BridgeProbeCatalog
             5000 => "Ball interna executada",
             5101 => "parâmetros inválidos para UseBallOnCorpse",
             5102 => "executor Lua falhou em UseBallOnCorpse",
-            6000 => "perfil de compatibilidade aplicado e validado pela bridge",
+            6000 => "perfil de compatibilidade aplicado com validação Lua (legado v6)",
+            6001 => "perfil de compatibilidade aplicado passivamente; nenhuma chamada Lua no handshake",
             6101 => "RVAs do perfil fora das regiões esperadas do módulo",
             6102 => "perfil chegou à bridge, mas a validação Lua falhou",
             6103 => "UseBallOnCorpse bloqueado: perfil ainda não configurado",

@@ -1,0 +1,26 @@
+# Build outputs
+bin/
+obj/
+native_bin/
+publish_*/
+launcher_publish_*/
+dist/
+Bridge/obj/
+
+# Local runtime logs/config
+logs/
+launcher.log
+
+# Generated release packages
+PxGAutoCatch-v*-win-x64.zip
+PxGAutoCatch-v*-win-x64.zip.sha256
+
+# IDE
+.vs/
+.vscode/
+*.user
+*.suo
+*.VC.db
+
+# Local SDK/bootstrap folders
+.dotnet/

@@ -1,0 +1,27 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <UseWindowsForms>true</UseWindowsForms>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <PlatformTarget>x64</PlatformTarget>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <AssemblyName>PxGCorpseReader</AssemblyName>
+    <RootNamespace>PxGCorpseReader</RootNamespace>
+    <Version>0.10.0</Version>
+    <FileVersion>0.10.0.0</FileVersion>
+    <AssemblyVersion>0.10.0.0</AssemblyVersion>
+  </PropertyGroup>
+
+  <!--
+    v0.5+ removed the old mouse/keyboard action layer.
+    Keep this exclusion so patching over v0.1-v0.4 remains safe even if the
+    obsolete file still exists on disk.
+  -->
+  <ItemGroup>
+    <Compile Remove="InputSender.cs" />
+  </ItemGroup>
+
+</Project>

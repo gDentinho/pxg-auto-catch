@@ -1,0 +1,7 @@
+{
+  "enabled": true,
+  "githubOwner": "gDentinho",
+  "githubRepo": "pxg-auto-catch",
+  "appExe": "PxGCorpseReader.exe",
+  "timeoutSeconds": 8
+}

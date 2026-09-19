@@ -1,0 +1,36 @@
+PxG Auto Catch v0.10.0 - Static Validation
+===========================================
+
+Validated against uploaded pxgme.exe:
+SHA-256: 9518E6BCD67074FEF4FE812F9BC0BA4A6365B6B8C6F6F40271EBDF62135F8236
+
+Offline AOB/signature results:
+- lua_pcall:          1 hit  @ RVA 0x00A2B380
+- luaL_loadbufferx:   1 hit  @ RVA 0x00A2CA10
+- LuaInterface xref:  1 hit  @ RVA 0x00001A20 -> slot RVA 0x01104730
+- Map xref:           1 hit  @ RVA 0x00279C53 -> Map slot RVA 0x01104740
+- Game init shape:    5 candidate xrefs, including the validated Game RVA 0x01334020.
+  Runtime validation intentionally selects the single candidate whose LocalPlayer/Creature
+  layout is coherent. Ambiguous or zero matches fail closed.
+
+Source contract checks:
+PASS - C# bridge protocol v6
+PASS - Native bridge protocol v6
+PASS - Pipe suffix .v6 on both sides
+PASS - Native target PxGCorpseBridge_v6.dll
+PASS - ConfigureCompatibility command exists
+PASS - UseBallOnCorpse blocked until Bridge compatibility validation succeeds
+PASS - Reader uses CompatibilityProfile instead of fixed Game/Map addresses
+PASS - Unknown builds use signature resolver + runtime validation
+PASS - Auto-resolved profiles are cached and revalidated
+PASS - Launcher checks GitHub Releases/latest
+PASS - Launcher requires release ZIP SHA-256 companion asset
+PASS - GitHub Actions release workflow included
+PASS - No SendInput in current source
+PASS - No SetCursorPos in current source
+
+Important limitation:
+This environment does not have the Windows .NET 8 SDK / MSVC toolchain, so the final
+Windows compilation must still be validated by build_release.bat on the user's Windows PC.
+The runtime Compatibility Resolver path for an unknown future PxG SHA can only be fully
+validated when such a future build exists. It is intentionally fail-closed.

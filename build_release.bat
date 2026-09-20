@@ -4,7 +4,7 @@ setlocal EnableExtensions EnableDelayedExpansion
 cd /d "%~dp0"
 
 echo ============================================================
-echo PxG Auto Catch v0.10.3 - COMPATIBILITY RESOLVER / BRIDGE V9 RACE-GUARD
+echo PxG Auto Catch v0.10.4 - COMPATIBILITY RESOLVER / BRIDGE V9 RACE-GUARD
 echo ============================================================
 echo.
 
@@ -60,7 +60,7 @@ if not defined STAMP set "STAMP=build"
 
 set "OUT=publish_!STAMP!"
 set "LAUNCHER_OUT=launcher_publish_!STAMP!"
-set "RELEASE_ZIP=PxGAutoCatch-v0.10.3-win-x64.zip"
+set "RELEASE_ZIP=PxGAutoCatch-v0.10.4-win-x64.zip"
 
 echo.
 echo Limpando caches de build anteriores...

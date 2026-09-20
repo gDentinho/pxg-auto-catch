@@ -28,9 +28,40 @@ internal sealed class BridgeLoader
         if (!reader.IsAttached)
             throw new InvalidOperationException("Reader não está conectado.");
 
-        if (!reader.IsKnownBuild)
+        var profile = reader.CompatibilityProfile;
+
+        if (profile is null || !profile.Validated)
+        {
             throw new InvalidOperationException(
-                "Bridge bloqueada: o SHA do pxgme.exe não é o build validado.");
+                "Bridge bloqueada: o Compatibility Resolver não validou este pxgme.exe.");
+        }
+
+        // Bridge v9 deliberately keeps the fixed Lua RVAs from the stable path.
+        // A PxG rebuild can change only the executable SHA while preserving the
+        // exact same validated layout. Allow that case, but fail closed if any
+        // bridge-critical RVA actually moved.
+        const ulong ExpectedLuaInterfaceSlotRva = 0x01104730;
+        const ulong ExpectedLuaPCallRva = 0x00A2B380;
+        const ulong ExpectedLuaLoadBufferXRva = 0x00A2CA10;
+
+        if (profile.LuaInterfaceSlotRva != ExpectedLuaInterfaceSlotRva ||
+            profile.LuaPCallRva != ExpectedLuaPCallRva ||
+            profile.LuaLoadBufferXRva != ExpectedLuaLoadBufferXRva)
+        {
+            throw new InvalidOperationException(
+                "Bridge bloqueada: o cliente foi reconhecido, mas os RVAs Lua " +
+                "mudaram em relação ao caminho estável da Bridge v9. " +
+                $"lua_slot=0x{profile.LuaInterfaceSlotRva:X}; " +
+                $"pcall=0x{profile.LuaPCallRva:X}; " +
+                $"loadbuffer=0x{profile.LuaLoadBufferXRva:X}");
+        }
+
+        log(
+            $"BRIDGE_COMPAT_OK known_sha={(reader.IsKnownBuild ? 1 : 0)}; " +
+            $"source={profile.Source}; " +
+            $"lua_slot=0x{profile.LuaInterfaceSlotRva:X}; " +
+            $"pcall=0x{profile.LuaPCallRva:X}; " +
+            $"loadbuffer=0x{profile.LuaLoadBufferXRva:X}");
 
         string dllPath = Path.Combine(
             AppContext.BaseDirectory,

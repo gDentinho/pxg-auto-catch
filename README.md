@@ -1,4 +1,4 @@
-# PxG Auto Catch v0.10.3 — race-condition mitigation
+# PxG Auto Catch v0.10.4 — compatible rebuild hotfix
 
 A v0.10.0 mantém o Auto Catch validado da v0.9.0 e adiciona duas camadas para reduzir a dependência de patches manuais quando o PxG muda:
 
@@ -411,3 +411,21 @@ instabilidade e abortar a ação em vez de insistir.
 
 A DLL foi renomeada para `PxGCorpseBridge_v9.dll` e o pipe para `.v9`, evitando
 reutilizar Bridges antigas já residentes no processo.
+
+
+## v0.10.4 — SHA novo com os mesmos RVAs estáveis
+
+A v0.10.3 ainda bloqueava a Bridge quando o SHA-256 do `pxgme.exe` mudava,
+mesmo quando o Compatibility Resolver validava o cliente e encontrava os
+mesmos RVAs usados pela Bridge estável.
+
+A v0.10.4 libera a Bridge somente quando:
+
+```text
+CompatibilityProfile.Validated = true
+LuaInterface slot = 0x1104730
+lua_pcall         = 0xA2B380
+luaL_loadbufferx  = 0xA2CA10
+```
+
+Se qualquer RVA crítico da Bridge mudar, a execução continua bloqueada.

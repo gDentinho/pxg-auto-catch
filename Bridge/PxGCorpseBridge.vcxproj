@@ -29,7 +29,7 @@
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
     <OutDir>$(ProjectDir)..\native_bin\</OutDir>
     <IntDir>$(ProjectDir)obj\x64\Release\</IntDir>
-    <TargetName>PxGCorpseBridge_v8</TargetName>
+    <TargetName>PxGCorpseBridge_v9</TargetName>
   </PropertyGroup>
 
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">

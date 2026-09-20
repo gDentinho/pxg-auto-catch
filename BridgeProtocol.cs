@@ -27,12 +27,12 @@ internal readonly record struct BridgeResponse(
 internal static class BridgeProtocol
 {
     internal const uint Magic = 0x31424350; // "PCB1"
-    internal const ushort Version = 8;
+    internal const ushort Version = 9;
     internal const int RequestSize = 32;
     internal const int ResponseSize = 32;
 
     internal static string PipeName(int pid)
-        => $"PxGCorpseBridge.{pid}.v8";
+        => $"PxGCorpseBridge.{pid}.v9";
 
     internal static byte[] SerializeRequest(
         BridgeAction action,
@@ -136,6 +136,8 @@ internal static class BridgeProbeCatalog
             2103 => "luaL_loadbufferx falhou",
             2104 => "lua_pcall falhou (predicate ausente/falso ou erro Lua)",
             2105 => "stack Lua ficou desbalanceado",
+            2110 => "lua_State mudou durante a janela de estabilidade; ação abortada",
+            2111 => "stack Lua mudou durante tentativa de restauração; ação abortada",
             2199 => "exceção nativa durante execução Lua",
             2200 => "probe code desconhecido",
             2401 => "OK; funções Lua resolvidas pelos RVAs fixos validados do build atual",

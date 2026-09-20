@@ -69,7 +69,7 @@ public sealed class MainForm : Form
 
     public MainForm()
     {
-        Text = "PxG Auto Catch v0.10.2";
+        Text = "PxG Auto Catch v0.10.3";
         Width = 940;
         Height = 720;
         MinimumSize = new Size(780, 600);

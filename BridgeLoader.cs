@@ -34,14 +34,14 @@ internal sealed class BridgeLoader
 
         string dllPath = Path.Combine(
             AppContext.BaseDirectory,
-            "PxGCorpseBridge_v8.dll");
+            "PxGCorpseBridge_v9.dll");
 
         if (!File.Exists(dllPath))
             throw new FileNotFoundException(
                 "PxGCorpseBridge.dll não está ao lado do executável.",
                 dllPath);
 
-        bool alreadyLoaded = IsModuleLoaded(reader.Process, "PxGCorpseBridge_v8.dll");
+        bool alreadyLoaded = IsModuleLoaded(reader.Process, "PxGCorpseBridge_v9.dll");
 
         if (alreadyLoaded)
         {
@@ -69,7 +69,7 @@ internal sealed class BridgeLoader
 
                 if (response.Status == BridgeStatus.Executed)
                 {
-                    return $"Ready v8 stable / PING detail={response.Detail0}";
+                    return $"Ready v9 race-guard / PING detail={response.Detail0}";
                 }
 
                 last = new InvalidOperationException(

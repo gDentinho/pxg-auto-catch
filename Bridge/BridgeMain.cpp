@@ -18,7 +18,7 @@
 namespace
 {
     constexpr std::uint32_t kMagic = 0x31424350; // PCB1
-    constexpr std::uint16_t kVersion = 8;
+    constexpr std::uint16_t kVersion = 9;
     constexpr UINT kBridgeMessage = WM_APP + 0x4B1;
     constexpr std::uintptr_t kLuaInterfaceSlotRva = 0x01104730;
 
@@ -77,9 +77,15 @@ namespace
 
     HMODULE g_self = nullptr;
     HWND g_hwnd = nullptr;
-    WNDPROC g_oldWndProc = nullptr;
+
+    // The bridge never subclasses the PxG window in v9. MacroHelpers also
+    // lives inside the same process, so chaining multiple third-party WndProc
+    // hooks is an unnecessary shared-state risk. A window timer is used only
+    // to marshal the request onto the PxG UI thread.
+    std::atomic<UINT_PTR> g_dispatchTimerId{ 0 };
 
     std::mutex g_actionMutex;
+    std::mutex g_luaMutex;
     std::condition_variable g_actionCv;
     bool g_actionPending = false;
     bool g_actionDone = false;
@@ -250,37 +256,157 @@ namespace
         return reinterpret_cast<void*>(L);
     }
 
+    struct LuaSnapshot
+    {
+        std::uintptr_t L;
+        std::uintptr_t stackBase;
+        std::uintptr_t stackTop;
+        std::uintptr_t stackMax;
+    };
+
+    bool TryReadLuaSnapshot(LuaSnapshot& snapshot)
+    {
+        snapshot = {};
+
+        __try
+        {
+            auto base = reinterpret_cast<std::uintptr_t>(GetModuleHandleW(nullptr));
+
+            if (!base)
+                return false;
+
+            auto luaInterface =
+                *reinterpret_cast<std::uintptr_t*>(base + kLuaInterfaceSlotRva);
+
+            if (!IsCanonical(luaInterface))
+                return false;
+
+            auto L = *reinterpret_cast<std::uintptr_t*>(luaInterface + 0x08);
+
+            if (!IsCanonical(L))
+                return false;
+
+            auto stackBase = *reinterpret_cast<std::uintptr_t*>(L + 0x20);
+            auto stackTop = *reinterpret_cast<std::uintptr_t*>(L + 0x28);
+            auto stackMax = *reinterpret_cast<std::uintptr_t*>(L + 0x30);
+
+            if (!IsCanonical(stackBase) ||
+                !IsCanonical(stackTop) ||
+                !IsCanonical(stackMax) ||
+                !(stackBase <= stackTop && stackTop <= stackMax) ||
+                stackMax - stackBase > 0x01000000ULL)
+            {
+                return false;
+            }
+
+            snapshot = { L, stackBase, stackTop, stackMax };
+            return true;
+        }
+        __except (EXCEPTION_EXECUTE_HANDLER)
+        {
+            return false;
+        }
+    }
+
+    bool IsLuaStateStable(LuaSnapshot& stable)
+    {
+        LuaSnapshot first{};
+        LuaSnapshot second{};
+
+        if (!TryReadLuaSnapshot(first))
+            return false;
+
+        // Give another in-process component a scheduling opportunity before
+        // committing to the shared Lua state. This is not a cross-tool lock;
+        // it is a conservative collision detector.
+        SwitchToThread();
+
+        if (!TryReadLuaSnapshot(second))
+            return false;
+
+        if (first.L != second.L ||
+            first.stackBase != second.stackBase ||
+            first.stackTop != second.stackTop ||
+            first.stackMax != second.stackMax)
+        {
+            return false;
+        }
+
+        stable = second;
+        return true;
+    }
+
+    bool TryRestoreLuaTop(
+        const LuaSnapshot& snapshot)
+    {
+        __try
+        {
+            auto currentBase =
+                *reinterpret_cast<std::uintptr_t*>(snapshot.L + 0x20);
+            auto currentTop =
+                *reinterpret_cast<std::uintptr_t*>(snapshot.L + 0x28);
+            auto currentMax =
+                *reinterpret_cast<std::uintptr_t*>(snapshot.L + 0x30);
+
+            // Never overwrite the stack pointer if another component appears
+            // to have changed the Lua stack meanwhile.
+            if (currentBase != snapshot.stackBase ||
+                currentMax != snapshot.stackMax ||
+                !IsCanonical(currentTop) ||
+                currentTop < currentBase ||
+                currentTop > currentMax)
+            {
+                return false;
+            }
+
+            *reinterpret_cast<std::uintptr_t*>(snapshot.L + 0x28) =
+                snapshot.stackTop;
+
+            return true;
+        }
+        __except (EXCEPTION_EXECUTE_HANDLER)
+        {
+            return false;
+        }
+    }
+
     struct ChunkResult
     {
         bool ok;
         int detail;
     };
 
-    ChunkResult RunChunkDetailed(const std::string& chunk)
+    // Keep SEH in a helper that owns no C++ objects requiring unwinding.
+    // MSVC rejects __try in a function that also contains std::lock_guard
+    // (C2712), so the mutex lifetime lives in the wrapper below.
+    ChunkResult RunChunkDetailedSeh(
+        const char* chunkData,
+        std::size_t chunkSize)
     {
         if (!ResolveLuaFunctions())
             return { false, 2102 };
 
-        void* L = ResolveLuaState();
+        LuaSnapshot snapshot{};
 
-        if (!L)
-            return { false, 2101 };
+        if (!IsLuaStateStable(snapshot))
+            return { false, 2110 };
 
-        auto Laddr = reinterpret_cast<std::uintptr_t>(L);
-        auto topBefore = *reinterpret_cast<std::uintptr_t*>(Laddr + 0x28);
+        void* L = reinterpret_cast<void*>(snapshot.L);
 
         __try
         {
             int loadStatus = g_loadBuffer(
                 L,
-                chunk.c_str(),
-                chunk.size(),
-                "@PxGCorpseBridge/v0.10.2",
+                chunkData,
+                chunkSize,
+                "@PxGCorpseBridge/v0.10.3",
                 "t");
 
             if (loadStatus != 0)
             {
-                *reinterpret_cast<std::uintptr_t*>(Laddr + 0x28) = topBefore;
+                if (!TryRestoreLuaTop(snapshot))
+                    return { false, 2111 };
+
                 return { false, 2103 };
             }
 
@@ -288,25 +414,41 @@ namespace
 
             if (callStatus != 0)
             {
-                *reinterpret_cast<std::uintptr_t*>(Laddr + 0x28) = topBefore;
+                if (!TryRestoreLuaTop(snapshot))
+                    return { false, 2111 };
+
                 return { false, 2104 };
             }
 
-            auto topAfter = *reinterpret_cast<std::uintptr_t*>(Laddr + 0x28);
+            auto topAfter =
+                *reinterpret_cast<std::uintptr_t*>(snapshot.L + 0x28);
 
-            if (topAfter != topBefore)
+            if (topAfter != snapshot.stackTop)
             {
-                *reinterpret_cast<std::uintptr_t*>(Laddr + 0x28) = topBefore;
+                if (!TryRestoreLuaTop(snapshot))
+                    return { false, 2111 };
+
                 return { false, 2105 };
             }
         }
         __except (EXCEPTION_EXECUTE_HANDLER)
         {
-            *reinterpret_cast<std::uintptr_t*>(Laddr + 0x28) = topBefore;
+            // Do not blindly write into lua_State from an SEH handler.
             return { false, 2199 };
         }
 
         return { true, 0 };
+    }
+
+    ChunkResult RunChunkDetailed(const std::string& chunk)
+    {
+        // Serialize only our own Bridge calls. The actual SEH execution is in
+        // RunChunkDetailedSeh(), which has no object requiring destruction.
+        std::lock_guard<std::mutex> luaLock(g_luaMutex);
+
+        return RunChunkDetailedSeh(
+            chunk.c_str(),
+            chunk.size());
     }
 
     ChunkResult ProbeExpression(const char* expression)
@@ -616,45 +758,6 @@ namespace
         }
     }
 
-    LRESULT CALLBACK BridgeWndProc(
-        HWND hwnd,
-        UINT message,
-        WPARAM wParam,
-        LPARAM lParam)
-    {
-        if (message == kBridgeMessage)
-        {
-            Request request{};
-
-            {
-                std::lock_guard<std::mutex> lock(g_actionMutex);
-
-                if (!g_actionPending || g_actionDone)
-                    return 0;
-
-                request = g_pendingRequest;
-            }
-
-            Response response = Execute(request);
-
-            {
-                std::lock_guard<std::mutex> lock(g_actionMutex);
-                g_pendingResponse = response;
-                g_actionDone = true;
-            }
-
-            g_actionCv.notify_all();
-            return 0;
-        }
-
-        return CallWindowProcW(
-            g_oldWndProc,
-            hwnd,
-            message,
-            wParam,
-            lParam);
-    }
-
     BOOL CALLBACK FindWindowForPid(HWND hwnd, LPARAM lParam)
     {
         DWORD pid = 0;
@@ -673,7 +776,7 @@ namespace
         return FALSE;
     }
 
-    bool InstallScheduler()
+    bool FindGameWindow()
     {
         HWND hwnd = nullptr;
         EnumWindows(FindWindowForPid, reinterpret_cast<LPARAM>(&hwnd));
@@ -681,20 +784,49 @@ namespace
         if (!hwnd)
             return false;
 
-        SetLastError(0);
-
-        auto oldProc = reinterpret_cast<WNDPROC>(
-            SetWindowLongPtrW(
-                hwnd,
-                GWLP_WNDPROC,
-                reinterpret_cast<LONG_PTR>(&BridgeWndProc)));
-
-        if (!oldProc && GetLastError() != 0)
-            return false;
-
         g_hwnd = hwnd;
-        g_oldWndProc = oldProc;
         return true;
+    }
+
+    VOID CALLBACK BridgeTimerProc(
+        HWND hwnd,
+        UINT,
+        UINT_PTR timerId,
+        DWORD)
+    {
+        KillTimer(hwnd, timerId);
+        g_dispatchTimerId.store(0);
+
+        Request request{};
+
+        {
+            std::lock_guard<std::mutex> lock(g_actionMutex);
+
+            if (!g_actionPending || g_actionDone)
+                return;
+
+            request = g_pendingRequest;
+        }
+
+        Response response = Execute(request);
+
+        {
+            std::lock_guard<std::mutex> lock(g_actionMutex);
+
+            // A request may have timed out while Execute() was running.
+            // Never let a stale completion mark a newer request as finished.
+            if (!g_actionPending ||
+                g_actionDone ||
+                g_pendingRequest.commandId != request.commandId)
+            {
+                return;
+            }
+
+            g_pendingResponse = response;
+            g_actionDone = true;
+        }
+
+        g_actionCv.notify_all();
     }
 
     bool ReadExact(HANDLE pipe, void* buffer, DWORD size)
@@ -754,7 +886,15 @@ namespace
             g_actionDone = false;
         }
 
-        if (!PostMessageW(g_hwnd, kBridgeMessage, 0, 0))
+        // Marshal onto the PxG window thread without replacing/subclassing its
+        // WndProc. DispatchMessage invokes TIMERPROC callbacks on that thread.
+        UINT_PTR timerId = SetTimer(
+            g_hwnd,
+            0,
+            USER_TIMER_MINIMUM,
+            BridgeTimerProc);
+
+        if (timerId == 0)
         {
             std::lock_guard<std::mutex> lock(g_actionMutex);
             g_actionPending = false;
@@ -765,17 +905,33 @@ namespace
             return busy;
         }
 
+        g_dispatchTimerId.store(timerId);
+
         std::unique_lock<std::mutex> lock(g_actionMutex);
 
         bool completed = g_actionCv.wait_for(
             lock,
             std::chrono::seconds(2),
-            [] { return g_actionDone; });
+            [commandId = request.commandId]
+            {
+                return g_actionDone &&
+                    g_pendingRequest.commandId == commandId;
+            });
 
         if (!completed)
         {
-            g_actionPending = false;
-            g_actionDone = false;
+            UINT_PTR activeTimer = g_dispatchTimerId.exchange(0);
+
+            if (activeTimer != 0)
+                KillTimer(g_hwnd, activeTimer);
+
+            // Invalidate this command. BridgeTimerProc checks commandId before
+            // publishing a result, preventing stale-completion races.
+            if (g_pendingRequest.commandId == request.commandId)
+            {
+                g_actionPending = false;
+                g_actionDone = false;
+            }
 
             busy.status = static_cast<std::uint16_t>(Status::Failed);
             busy.detail0 = 4003;
@@ -795,7 +951,7 @@ namespace
         std::swprintf(
             pipeName,
             sizeof(pipeName) / sizeof(pipeName[0]),
-            L"\\\\.\\pipe\\PxGCorpseBridge.%lu.v8",
+            L"\\\\.\\pipe\\PxGCorpseBridge.%lu.v9",
             static_cast<unsigned long>(GetCurrentProcessId()));
 
         for (;;)
@@ -838,10 +994,10 @@ namespace
     DWORD WINAPI Bootstrap(LPVOID)
     {
         // Give the game's main window a moment to settle if DLL is loaded during startup.
-        for (int i = 0; i < 50 && !InstallScheduler(); ++i)
+        for (int i = 0; i < 50 && !FindGameWindow(); ++i)
             Sleep(100);
 
-        if (!g_hwnd || !g_oldWndProc)
+        if (!g_hwnd)
             return 1;
 
         std::thread(PipeServerLoop).detach();

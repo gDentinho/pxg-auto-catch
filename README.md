@@ -1,4 +1,4 @@
-# PxG Auto Catch v0.10.2 — stability rollback
+# PxG Auto Catch v0.10.3 — race-condition mitigation
 
 A v0.10.0 mantém o Auto Catch validado da v0.9.0 e adiciona duas camadas para reduzir a dependência de patches manuais quando o PxG muda:
 
@@ -376,3 +376,38 @@ Bridge estável anteriormente validada.
 
 A Bridge usa um novo nome/pipe (`PxGCorpseBridge_v8.dll`, `.v8`) para não
 reutilizar nenhuma DLL v5/v6/v7 residente no processo.
+
+
+## v0.10.3 — mitigação de possível condição de corrida
+
+Esta versão mantém o caminho estável da v0.10.2 e adiciona proteções
+conservadoras para coexistência com outros componentes injetados no mesmo
+processo.
+
+Mudanças principais:
+
+```text
+1. A Bridge NÃO substitui mais o WndProc da janela do PxG.
+   O marshaling para a thread da janela é feito por TIMERPROC/SetTimer.
+
+2. Cada conclusão é vinculada ao commandId original.
+   Uma ação antiga que termine depois de timeout não pode marcar uma ação
+   mais nova como concluída.
+
+3. Execuções Lua da própria Bridge são serializadas por mutex.
+
+4. Antes de chamar Lua, a Bridge lê o lua_State duas vezes com um yield entre
+   as leituras. Se ponteiros/stack mudarem, a ação é abortada em vez de seguir.
+
+5. Em exceção nativa, a Bridge não força mais uma escrita em L+0x28.
+   A restauração do stack pointer só ocorre quando o estado ainda passa por
+   verificações defensivas.
+```
+
+Essas mudanças reduzem pontos de compartilhamento com outros módulos. Elas
+não criam um lock compartilhado com MacroHelpers, portanto não garantem que
+uma condição de corrida externa seja impossível; a estratégia é detectar
+instabilidade e abortar a ação em vez de insistir.
+
+A DLL foi renomeada para `PxGCorpseBridge_v9.dll` e o pipe para `.v9`, evitando
+reutilizar Bridges antigas já residentes no processo.

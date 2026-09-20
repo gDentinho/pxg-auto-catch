@@ -36,8 +36,8 @@ if (-not (Test-Path $msbuild)) { throw "MSBuild não encontrado em $msbuild" }
 & $msbuild (Join-Path $Root "Bridge\PxGCorpseBridge.vcxproj") /p:Configuration=$Configuration /p:Platform=x64 /m
 if ($LASTEXITCODE -ne 0) { throw "Build da bridge falhou." }
 
-$bridge = Join-Path $NativeBin "PxGCorpseBridge_v8.dll"
-if (-not (Test-Path $bridge)) { throw "PxGCorpseBridge_v8.dll não foi gerada." }
+$bridge = Join-Path $NativeBin "PxGCorpseBridge_v9.dll"
+if (-not (Test-Path $bridge)) { throw "PxGCorpseBridge_v9.dll não foi gerada." }
 
 & dotnet publish (Join-Path $Root "PxGCorpseReader.csproj") `
     -c $Configuration `
@@ -59,7 +59,7 @@ if ($LASTEXITCODE -ne 0) { throw "Publish do app falhou." }
     -o $LauncherOut
 if ($LASTEXITCODE -ne 0) { throw "Publish do launcher falhou." }
 
-Copy-Item $bridge (Join-Path $AppOut "PxGCorpseBridge_v8.dll") -Force
+Copy-Item $bridge (Join-Path $AppOut "PxGCorpseBridge_v9.dll") -Force
 Copy-Item (Join-Path $LauncherOut "PxGAutoCatch.exe") (Join-Path $AppOut "PxGAutoCatch.exe") -Force
 Copy-Item (Join-Path $Root "update_config.json") (Join-Path $AppOut "update_config.json") -Force
 
